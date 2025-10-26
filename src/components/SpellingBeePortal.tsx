@@ -461,10 +461,17 @@ export default function SpellingBeePortal() {
     previousTimeRef.current = 0;
 
     if (idx + 1 < deck.length) {
-      setIdx((i: number) => i + 1);
-      if (modeRef.current === "dictation") {
+      const nextIdx = idx + 1;
+      setIdx(nextIdx);
+      idxRef.current = nextIdx;
+
+      const activeMode = modeRef.current;
+      if (activeMode === "dictation") {
         setTimeout(() => startDictationTurn(), 120);
       } else {
+        if (activeMode !== "speller") {
+          setTimeout(() => playModeStartPrompt(), 140);
+        }
         setTimeout(() => inputRef.current?.focus(), 50);
       }
     } else {
