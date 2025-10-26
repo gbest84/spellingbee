@@ -189,6 +189,7 @@ export default function SpellingBeePortal() {
   const [completedDeck, setCompletedDeck] = useState<WordItem[]>([]);
   const [preCountdown, setPreCountdown] = useState<number>(0);
   const [showPreCountdown, setShowPreCountdown] = useState<boolean>(false);
+  const [preCountdownDescription, setPreCountdownDescription] = useState<string>("The round will begin when the countdown reaches zero.");
 
   // Refs & derived
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -201,6 +202,7 @@ export default function SpellingBeePortal() {
   const scoreRef = useRef<number>(score);
   const modeRef = useRef<Mode>(mode);
   const resultsRef = useRef<(ResultItem | undefined)[]>(results);
+  const skipNextSpellerSpeakRef = useRef<boolean>(false);
   const current: WordItem | undefined = deck[idx];
   const progress = deck.length ? Math.round((idx / deck.length) * 100) : 0;
   const ttsRateValue = ttsRate === 'slow' ? 0.85 : ttsRate === 'fast' ? 1.15 : 0.95;
@@ -219,6 +221,7 @@ export default function SpellingBeePortal() {
 
   useEffect(() => {
     modeRef.current = mode;
+    skipNextSpellerSpeakRef.current = false;
   }, [mode]);
 
   useEffect(() => {
@@ -250,6 +253,32 @@ export default function SpellingBeePortal() {
     setTimeout(() => inputRef.current?.focus(), 150);
   };
 
+  const playModeStartPrompt = () => {
+    if (!useTTS) return;
+    const activeMode = modeRef.current;
+    if (activeMode === "dictation") return;
+    const deckSnapshot = deckRef.current;
+    const currentIdx = idxRef.current;
+    const word = deckSnapshot[currentIdx];
+    if (!word) return;
+
+    if (activeMode === "speller") {
+      speakSpelled(word.word);
+      return;
+    }
+
+    const safeDef = word.def || "";
+    const safeSent = word.sent || "";
+    const base = `${word.word}. Definition: ${safeDef}${safeSent ? `. In a sentence: ${safeSent}` : ""}`;
+
+    if (activeMode === "bee") {
+      speakWithRate(`${base}. Spell the word now.`, ttsRateValue);
+      return;
+    }
+
+    speakWithRate(`${base}. Practice spelling when you're ready.`, ttsRateValue);
+  };
+
   // Effects
   useEffect(() => {
     if (deck.length === 0) {
@@ -257,21 +286,34 @@ export default function SpellingBeePortal() {
       setTimeLeft(0);
       return;
     }
+    if (showPreCountdown) {
+      countdownActiveRef.current = false;
+      setTimeLeft(0);
+      return;
+    }
     if (mode === "bee") {
       countdownActiveRef.current = true;
+      previousTimeRef.current = 25;
       setTimeLeft(25);
+      return;
     }
     if (mode === "speller") {
       countdownActiveRef.current = true;
+      previousTimeRef.current = 30;
       setTimeLeft(30);
-      if (current) speakSpelled(current.word);
+      if (!skipNextSpellerSpeakRef.current && current) speakSpelled(current.word);
+      skipNextSpellerSpeakRef.current = false;
+      return;
     }
     if (mode === "practice") {
       countdownActiveRef.current = false;
+      previousTimeRef.current = 0;
       setTimeLeft(0);
+      return;
     }
+    // Dictation handled separately
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, deck, idx]);
+  }, [mode, deck, idx, showPreCountdown, current]);
 
   useEffect(() => {
     if (mode !== "bee" && mode !== "speller" && mode !== "dictation") return;
@@ -326,38 +368,55 @@ export default function SpellingBeePortal() {
     setCompletedDeck([]);
     resultsRef.current = [];
 
-    if (mode === "dictation") {
-      setShowPreCountdown(true);
-      setPreCountdown(3);
-      if (useTTS) speakWithRate("Welcome to Dictation Mode. Listen carefully.", ttsRateValue);
-      countdownTimerRef.current = window.setInterval(() => {
-        setPreCountdown((prev) => {
-          if (prev <= 1) {
-            if (countdownTimerRef.current) {
-              window.clearInterval(countdownTimerRef.current);
-              countdownTimerRef.current = null;
-            }
-            setShowPreCountdown(false);
-            startDictationTurn();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      if (useTTS)
-        speakWithRate(
-          `Starting ${
-            mode === "bee"
-              ? "Bee Mode"
-              : mode === "speller"
-              ? "Speller Mode"
-              : "Practice Mode"
-          }. Good luck!`,
-          ttsRateValue
-        );
-      setTimeout(() => inputRef.current?.focus(), 100);
+    const welcomeMessage =
+      mode === "dictation"
+        ? "Welcome to Dictation Mode. Listen carefully."
+        : mode === "bee"
+        ? "Welcome to Bee Mode. Stay sharp and spell fast."
+        : mode === "speller"
+        ? "Welcome to Speller Mode. Spell it out with confidence."
+        : "Welcome to Practice Mode. Take your time and have fun.";
+    const countdownDescription =
+      mode === "dictation"
+        ? "Dictation will begin when the countdown reaches zero."
+        : mode === "bee"
+        ? "Bee Mode will begin when the countdown reaches zero."
+        : mode === "speller"
+        ? "Speller Mode will begin when the countdown reaches zero."
+        : "Practice Mode will begin when the countdown reaches zero.";
+
+    if (countdownTimerRef.current) {
+      window.clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
     }
+
+    setPreCountdownDescription(countdownDescription);
+    setShowPreCountdown(true);
+    setPreCountdown(3);
+    if (useTTS) speakWithRate(welcomeMessage, ttsRateValue);
+
+    countdownTimerRef.current = window.setInterval(() => {
+      setPreCountdown((prev) => {
+        if (prev <= 1) {
+          if (countdownTimerRef.current) {
+            window.clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+          }
+          setShowPreCountdown(false);
+          if (modeRef.current === "dictation") {
+            startDictationTurn();
+          } else {
+            if (modeRef.current === "speller") {
+              skipNextSpellerSpeakRef.current = true;
+            }
+            playModeStartPrompt();
+            setTimeout(() => inputRef.current?.focus(), 120);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
   };
 
   const handleCheck = (fromTimeout = false) => {
@@ -535,12 +594,12 @@ export default function SpellingBeePortal() {
   return (
     <div className="min-h-screen w-full bg-gradient-to-b from-slate-50 to-white text-slate-900">
       <div className="mx-auto max-w-6xl p-4 md:p-10">
-        {showPreCountdown && mode === "dictation" && (
+        {showPreCountdown && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
             <div className="rounded-3xl bg-white px-16 py-12 text-center shadow-2xl">
               <div className="mb-4 text-sm font-medium uppercase tracking-wide text-brand-500">Get Ready</div>
               <div className="animate-bounce text-6xl font-display font-semibold text-brand-600">{preCountdown}</div>
-              <p className="mt-3 text-base text-slate-600">Dictation will begin when the countdown reaches zero.</p>
+              <p className="mt-3 text-base text-slate-600">{preCountdownDescription}</p>
             </div>
           </div>
         )}
