@@ -527,12 +527,12 @@ export default function SpellingBeePortal() {
 
     handleCheck(true);
 
-    if (mode === "dictation" && !finished) {
+    if (!finished) {
       const timer = window.setTimeout(() => {
         if (timeoutIndexRef.current === idx && !finished) {
           nextWord();
         }
-      }, 1200);
+      }, mode === "dictation" ? 1200 : 800);
       return () => window.clearTimeout(timer);
     }
     previousTimeRef.current = timeLeft;
