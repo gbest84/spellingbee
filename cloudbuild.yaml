@@ -10,6 +10,7 @@ steps:
        '--image', 'asia-southeast2-docker.pkg.dev/spellingbeeproject-476308/spelingbee/spellingbee-app:latest',
        '--region', 'asia-southeast2',
        '--platform', 'managed',
+       '--max-instances', '2',
        '--allow-unauthenticated']
 
 images:
