@@ -1,19 +1,19 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'asia-southeast2-docker.pkg.dev/spellingbeeproject-476308/spellingbee/spellingbee', '.']
+    args: ['build', '-t', 'asia-southeast2-docker.pkg.dev/spellingbeeproject-476308/spelingbee/spellingbee-app:latest', '.']
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'asia-southeast2-docker.pkg.dev/spellingbeeproject-476308/spellingbee/spellingbee']
+    args: ['push', 'asia-southeast2-docker.pkg.dev/spellingbeeproject-476308/spelingbee/spellingbee-app:latest']
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       ['run', 'deploy', 'spellingbee',
-       '--image', 'asia-southeast2-docker.pkg.dev/spellingbeeproject-476308/spellingbee/spellingbee',
+       '--image', 'asia-southeast2-docker.pkg.dev/spellingbeeproject-476308/spelingbee/spellingbee-app:latest',
        '--region', 'asia-southeast2',
        '--platform', 'managed',
        '--allow-unauthenticated']
 
 images:
-  - 'asia-southeast2-docker.pkg.dev/spellingbeeproject-476308/spellingbee/spellingbee'
+  - 'asia-southeast2-docker.pkg.dev/spellingbeeproject-476308/spelingbee/spellingbee-app:latest'
 
 options:
   logging: CLOUD_LOGGING_ONLY
