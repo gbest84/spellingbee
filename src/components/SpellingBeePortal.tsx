@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Trophy, Volume2, VolumeX, RotateCcw, BookOpenCheck, Play, Info, Settings2, ChevronRight, CheckCircle2, XCircle, Sparkles, TimerReset, Upload } from "lucide-react";
+import { Trophy, Volume2, VolumeX, RotateCcw, BookOpenCheck, Play, Info, Settings2, ChevronRight, CheckCircle2, XCircle, Sparkles, TimerReset, Upload, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -66,6 +66,43 @@ const DEFAULT_WORDS = [
   { word: "frightened", syll: "fright•ened", def: "scared or afraid", sent: "The crash made the cat frightened.", cat: "Imagination" },
   { word: "kingdom", syll: "king•dom", def: "land ruled by a king or queen", sent: "The kingdom slept under stars.", cat: "Imagination" },
 ];
+
+const RANDOM_WORD_POOL = [
+  { word: "horizon", syll: "ho•ri•zon", def: "the line where the earth and sky seem to meet", sent: "They watched the sun dip below the horizon.", cat: "Nature" },
+  { word: "compass", syll: "com•pass", def: "a tool used to find direction", sent: "She checked the compass before hiking north.", cat: "Everyday" },
+  { word: "resourceful", syll: "re•source•ful", def: "able to solve problems with what you have", sent: "The resourceful student fixed the project with tape and paperclips.", cat: "Character" },
+  { word: "lantern", syll: "lan•tern", def: "a portable light with a protective case", sent: "The lantern glowed softly in the tent.", cat: "Everyday" },
+  { word: "torrent", syll: "tor•rent", def: "a strong and fast-moving stream of water", sent: "Rain turned the trail into a rushing torrent.", cat: "Nature" },
+  { word: "discovery", syll: "dis•cov•er•y", def: "something found for the first time", sent: "The discovery excited the young scientists.", cat: "Imagination" },
+  { word: "guardian", syll: "guard•i•an", def: "someone who protects or watches over others", sent: "The guardian watched the gate carefully.", cat: "Character" },
+  { word: "navigate", syll: "nav•i•gate", def: "to find the way from place to place", sent: "He learned to navigate by the stars.", cat: "Action" },
+  { word: "voyage", syll: "voy•age", def: "a long journey, especially by sea or in space", sent: "Their voyage across the ocean took months.", cat: "Imagination" },
+  { word: "whittle", syll: "whit•tle", def: "to carve or shape by cutting small pieces", sent: "She used a pocketknife to whittle a small boat.", cat: "Action" },
+];
+
+const OPENAI_MODEL = "gpt-4o-mini";
+const OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+
+function extractJsonBlock(raw: string): string {
+  const fence = /```json([\s\S]*?)```/i;
+  const match = raw.match(fence);
+  if (match) return match[1].trim();
+  return raw.trim();
+}
+
+function normalizeAiWordItems(payload: unknown): WordItem[] {
+  if (!Array.isArray(payload)) return [];
+  return (payload as any[]).map((item) => {
+    const word = String(item?.word ?? "").trim();
+    return {
+      word,
+      syll: String(item?.syll ?? "").trim(),
+      def: String(item?.def ?? "").trim(),
+      sent: String(item?.sent ?? "").trim(),
+      cat: String(item?.cat ?? "AI").trim() || "AI",
+    } satisfies WordItem;
+  }).filter((item) => item.word);
+}
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -170,7 +207,11 @@ export default function SpellingBeePortal() {
 
   // Data
   const [customWords, setCustomWords] = useLocalStorage<WordItem[]>("sb_custom_words", []);
-  const bank = useMemo(() => (customWords.length ? customWords : DEFAULT_WORDS), [customWords]);
+  const [extraWords, setExtraWords] = useLocalStorage<WordItem[]>("sb_extra_words", []);
+  const [baseWords, setBaseWords] = useLocalStorage<WordItem[]>("sb_base_words", DEFAULT_WORDS);
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const bank = useMemo(() => (customWords.length ? customWords : [...baseWords, ...extraWords]), [customWords, baseWords, extraWords]);
 
   // Game state
   const [deck, setDeck] = useState<WordItem[]>([]);
@@ -572,6 +613,82 @@ export default function SpellingBeePortal() {
     reader.readAsText(file);
   };
 
+  const addRandomWord = () => {
+    const existing = new Set(
+      [...baseWords, ...extraWords, ...customWords].map((item) => item.word.trim().toLowerCase())
+    );
+    const randomWord = RANDOM_WORD_POOL.find((item) => !existing.has(item.word.trim().toLowerCase()));
+    if (!randomWord) {
+      alert("No more random words available.");
+      return;
+    }
+    setExtraWords((prev) => [...prev, randomWord]);
+    alert(`Added random word: ${randomWord.word}`);
+  };
+
+  const fetchAiWordBank = async () => {
+    if (customWords.length) {
+      alert("Custom words are active. Clear them before generating AI words.");
+      return;
+    }
+
+    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+    if (!apiKey) {
+      setAiError("Missing VITE_OPENAI_API_KEY. Please set it in your environment.");
+      return;
+    }
+
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const prompt = `Generate a JSON array of ${Math.max(wordCount, 10)} unique English spelling-bee words for grades 4-6. Each item must be an object with the keys word, syll, def, sent, and cat. Use kid-friendly language. Respond with JSON only.`;
+      const response = await fetch(OPENAI_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: OPENAI_MODEL,
+          messages: [
+            {
+              role: "system",
+              content: "You are a helpful assistant that creates educational word lists for middle grade spelling bees.",
+            },
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
+          temperature: 0.6,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      const rawContent: string | undefined = data?.choices?.[0]?.message?.content;
+      if (!rawContent) throw new Error("OpenAI response did not include content.");
+
+      const cleaned = extractJsonBlock(rawContent);
+      const parsed = JSON.parse(cleaned);
+      const normalized = normalizeAiWordItems(parsed);
+      if (!normalized.length) throw new Error("No usable words returned by OpenAI.");
+
+      setBaseWords(normalized);
+      setExtraWords([] as WordItem[]);
+      alert(`Loaded ${normalized.length} AI-generated words.`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setAiError(message);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   // ---------- Dev-only sanity tests (console.assert) ----------
   const isDevEnvironment = typeof window !== "undefined" && (window as any)?.process?.env?.NODE_ENV !== "production";
   if (isDevEnvironment) {
@@ -691,11 +808,19 @@ export default function SpellingBeePortal() {
             <div className="flex flex-wrap items-center gap-3">
               <Button onClick={startGame} size="lg" className="gap-2"><Play className="h-4 w-4"/> Start Round</Button>
               <Button variant="outline" size="lg" onClick={() => { setCustomWords([] as WordItem[]); alert("Restored default word bank."); }} className="gap-2"><RotateCcw className="h-4 w-4"/> Reset Bank</Button>
+              <Button variant="outline" size="lg" onClick={fetchAiWordBank} disabled={!!customWords.length} className="gap-2"><Loader2 className="h-4 w-4"/> Fetch AI Words</Button>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
               <Label htmlFor="import" className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700"><Upload className="h-4 w-4"/> Import JSON</Label>
               <input id="import" type="file" accept="application/json" onChange={importJSON} className="hidden" />
               <span className="text-xs text-slate-500">Supports {`[{"word","syll","def","sent","cat"}]`}</span>
+              {aiLoading ? (
+                <span className="text-xs text-slate-500">Loading AI words...</span>
+              ) : aiError ? (
+                <span className="text-xs text-slate-500">{aiError}</span>
+              ) : (
+                <span className="text-xs text-slate-500">AI words available</span>
+              )}
             </div>
           </CardFooter>
         </Card>
