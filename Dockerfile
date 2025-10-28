@@ -1,6 +1,9 @@
 # Stage 1: Build the Vite React app
 FROM node:20-alpine AS builder
 
+ARG VITE_OPENAI_API_KEY
+ENV VITE_OPENAI_API_KEY=$VITE_OPENAI_API_KEY
+
 WORKDIR /app
 
 # Install dependencies based on lock file
@@ -24,6 +27,9 @@ COPY --from=builder /app/dist ./dist
 
 ENV NODE_ENV=production
 ENV PORT=8080
+
+ARG VITE_OPENAI_API_KEY
+ENV VITE_OPENAI_API_KEY=$VITE_OPENAI_API_KEY
 EXPOSE 8080
 
 # Serve the static site, binding to the port provided by Cloud Run
