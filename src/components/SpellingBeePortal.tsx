@@ -642,26 +642,29 @@ export default function SpellingBeePortal() {
     setAiError(null);
     try {
       const prompt = `Generate a JSON array of ${Math.max(wordCount, 10)} unique English spelling-bee words for grades 4-6. Each item must be an object with the keys word, syll, def, sent, and cat. Use kid-friendly language. Respond with JSON only.`;
+      const requestPayload = {
+        model: OPENAI_MODEL,
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful assistant that creates educational word lists for middle grade spelling bees.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: 0.6,
+      } as const;
+      console.info("[OpenAI] Request payload", requestPayload);
+
       const response = await fetch(OPENAI_ENDPOINT, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-          model: OPENAI_MODEL,
-          messages: [
-            {
-              role: "system",
-              content: "You are a helpful assistant that creates educational word lists for middle grade spelling bees.",
-            },
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
-          temperature: 0.6,
-        }),
+        body: JSON.stringify(requestPayload),
       });
 
       if (!response.ok) {
@@ -670,6 +673,11 @@ export default function SpellingBeePortal() {
       }
 
       const data = await response.json();
+      console.info("[OpenAI] Response", {
+        status: response.status,
+        usage: data?.usage,
+        choicesCount: data?.choices?.length ?? 0,
+      });
       const rawContent: string | undefined = data?.choices?.[0]?.message?.content;
       if (!rawContent) throw new Error("OpenAI response did not include content.");
 
