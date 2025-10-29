@@ -14,23 +14,20 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# Stage 2: Run a lightweight server for the static build
+# Stage 2: Run Node server with Express backend
 FROM node:20-alpine AS runner
-
-WORKDIR /app
-
-# Install a simple static file server
-RUN npm install -g serve@14
-
-# Copy the compiled build artifacts
-COPY --from=builder /app/dist ./dist
 
 ENV NODE_ENV=production
 ENV PORT=8080
 
-ARG VITE_OPENAI_API_KEY
-ENV VITE_OPENAI_API_KEY=$VITE_OPENAI_API_KEY
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+COPY --from=builder /app/dist ./dist
+COPY server ./server
+
 EXPOSE 8080
 
-# Serve the static site, binding to the port provided by Cloud Run
-CMD ["sh", "-c", "serve -s dist -l ${PORT}"]
+CMD ["node", "server/index.js"]

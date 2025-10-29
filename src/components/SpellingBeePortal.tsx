@@ -80,16 +80,6 @@ const RANDOM_WORD_POOL = [
   { word: "whittle", syll: "whit•tle", def: "to carve or shape by cutting small pieces", sent: "She used a pocketknife to whittle a small boat.", cat: "Action" },
 ];
 
-const OPENAI_MODEL = "gpt-4o-mini";
-const OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
-
-function extractJsonBlock(raw: string): string {
-  const fence = /```json([\s\S]*?)```/i;
-  const match = raw.match(fence);
-  if (match) return match[1].trim();
-  return raw.trim();
-}
-
 function normalizeAiWordItems(payload: unknown): WordItem[] {
   if (!Array.isArray(payload)) return [];
   return (payload as any[]).map((item) => {
@@ -632,59 +622,41 @@ export default function SpellingBeePortal() {
       return;
     }
 
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-    if (!apiKey) {
-      setAiError("Missing VITE_OPENAI_API_KEY. Please set it in your environment.");
-      return;
-    }
-
     setAiLoading(true);
     setAiError(null);
     try {
-      const prompt = `Generate a JSON array of ${Math.max(wordCount, 10)} unique English spelling-bee words for grades 4-6. Each item must be an object with the keys word, syll, def, sent, and cat. Use kid-friendly language. Respond with JSON only.`;
-      const requestPayload = {
-        model: OPENAI_MODEL,
-        messages: [
-          {
-            role: "system",
-            content: "You are a helpful assistant that creates educational word lists for middle grade spelling bees.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.6,
-      } as const;
-      console.info("[OpenAI] Request payload", requestPayload);
+      const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+      const requestBody = { wordCount: Math.max(wordCount, 10) };
+      console.info("[AI] Requesting word bank", requestBody);
 
-      const response = await fetch(OPENAI_ENDPOINT, {
+      const response = await fetch(`${apiBase}/api/openai/word-bank`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify(requestPayload),
+        body: JSON.stringify(requestBody),
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
+      let payload: any = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
       }
 
-      const data = await response.json();
-      console.info("[OpenAI] Response", {
-        status: response.status,
-        usage: data?.usage,
-        choicesCount: data?.choices?.length ?? 0,
-      });
-      const rawContent: string | undefined = data?.choices?.[0]?.message?.content;
-      if (!rawContent) throw new Error("OpenAI response did not include content.");
+      if (!response.ok) {
+        const message = String(payload?.error ?? `Server error (${response.status})`);
+        throw new Error(message);
+      }
 
-      const cleaned = extractJsonBlock(rawContent);
-      const parsed = JSON.parse(cleaned);
-      const normalized = normalizeAiWordItems(parsed);
-      if (!normalized.length) throw new Error("No usable words returned by OpenAI.");
+      console.info("[AI] Server response", {
+        status: response.status,
+        usage: payload?.usage ?? null,
+        words: Array.isArray(payload?.words) ? payload.words.length : 0,
+      });
+
+      const normalized = normalizeAiWordItems(payload?.words ?? []);
+      if (!normalized.length) throw new Error("No usable words returned by AI service.");
 
       setBaseWords(normalized);
       setExtraWords([] as WordItem[]);

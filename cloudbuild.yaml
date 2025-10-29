@@ -4,7 +4,6 @@ steps:
       [
         'build',
         '-t', 'asia-southeast2-docker.pkg.dev/spellingbeeproject-476308/spelingbee/spellingbee-app:latest',
-        '--build-arg', 'VITE_OPENAI_API_KEY=${_VITE_OPENAI_API_KEY}',
         '.'
       ]
   - name: 'gcr.io/cloud-builders/docker'
@@ -18,7 +17,7 @@ steps:
        '--platform', 'managed',
        '--max-instances', '2',
        '--min-instances', '0',
-       '--set-env-vars', 'VITE_OPENAI_API_KEY=${_VITE_OPENAI_API_KEY}',
+       '--set-env-vars', 'OPENAI_API_KEY=${_OPENAI_API_KEY}',
        '--allow-unauthenticated']
 
 images:
